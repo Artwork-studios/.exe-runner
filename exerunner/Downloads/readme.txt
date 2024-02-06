@@ -1,0 +1,1 @@
+this is the downloads folder you can drop in a folder containing a .exe file then run it using the program i made delete this after reading

@@ -5,6 +5,9 @@ import subprocess
 import pefile
 import hashlib
 import logging
+import secrets
+import hmac
+import base64
 
 # ANSI escape codes for text colors
 GREEN = "\033[32m"
@@ -72,36 +75,56 @@ class ExeRunnerApp:
         # Log errors to a file
         logging.error(error_message)
 
+    def hash_password(self, password, salt):
+        # Use HMAC for password hashing with a random salt
+        hashed_password = hmac.new(salt, password.encode(), hashlib.sha256).digest()
+        return hashed_password
+
+    def generate_salt(self):
+        # Generate a random salt for each password
+        return secrets.token_bytes(16)  # 16 bytes for a good salt size
+
+    def secure_compare(self, a, b):
+        # Constant-time comparison to mitigate timing attacks
+        return hmac.compare_digest(a, b)
+
     def setup_password(self):
         password_file_path = os.path.join(os.path.dirname(__file__), "password.txt")
 
         if not os.path.exists(password_file_path):
-            # Set up a 4-digit password if it doesn't exist
+            # Set up a password if it doesn't exist
             password = self.get_valid_password()
-            with open(password_file_path, "w") as password_file:
-                password_file.write(password)
+            salt = self.generate_salt()
+            hashed_password = self.hash_password(password, salt)
+            with open(password_file_path, "wb") as password_file:
+                password_file.write(hashed_password)
+                password_file.write(salt)
             messagebox.showinfo("Password Set", "Password has been set successfully!")
 
-        # Get the password from the file
-        with open(password_file_path, "r") as password_file:
-            self.password = password_file.read().strip()
+        # Get the hashed password and salt from the file
+        with open(password_file_path, "rb") as password_file:
+            self.hashed_password = password_file.read(32)
+            self.salt = password_file.read()
 
     def get_valid_password(self):
         while True:
-            password = simpledialog.askstring("Set Password", "Set a 4-digit password:")
-            if password.isdigit() and len(password) == 4:
+            password = simpledialog.askstring("Set Password", "Set a strong password:")
+            if len(password) >= 8:  # You can adjust the minimum password length
                 return password
-            messagebox.showerror("Invalid Password", "Invalid password. Please enter a 4-digit numeric password.")
+            messagebox.showerror("Invalid Password", "Invalid password. Please enter a stronger password.")
 
     def authenticate_user(self):
-        # Prompt user to log in using the stored password
+        # Prompt user to log in using the stored hashed password
         authenticated = False
         attempts = 3
 
         while not authenticated and attempts > 0:
-            entered_password = simpledialog.askstring("Password", "Enter your 4-digit password:")
+            entered_password = simpledialog.askstring("Password", "Enter your password:")
 
-            if entered_password == self.password:
+            # Hash the entered password with the stored salt for comparison
+            entered_password_hashed = self.hash_password(entered_password, self.salt)
+
+            if self.secure_compare(entered_password_hashed, self.hashed_password):
                 authenticated = True
             else:
                 attempts -= 1
